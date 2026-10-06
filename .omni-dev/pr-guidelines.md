@@ -1,6 +1,6 @@
 # Pull Request Guidelines
 
-This document provides guidelines for writing effective pull request descriptions for the omni-dev-coverage-check GitHub Action.
+This document provides guidelines for writing effective pull request descriptions for the patchcov-action GitHub Action.
 
 ## Overview
 
@@ -150,7 +150,7 @@ Use conventional commit format:
 
 **Example Test Workflow:**
 ```yaml
-- uses: action-works/omni-dev-coverage-check@this-branch
+- uses: action-works/patchcov-action@this-branch
   with:
     worktree-system-deps: libasound2-dev
 ```

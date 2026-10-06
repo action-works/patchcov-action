@@ -4,7 +4,8 @@
 
 This composite GitHub Action installs patchcov and uses `patchcov diff` for the PR
 comment, patch gate and thin-mode line gate. Fat mode collects coverage with
-cargo-llvm-cov. Repository/action references remain `omni-dev-coverage-check`.
+cargo-llvm-cov. The repository is `action-works/patchcov-action`; it was copied from
+`action-works/omni-dev-coverage-check`, which stays up for callers still pinned to it.
 
 - `action.yml`: all composite steps; inputs reach shell through `env:`, never through
   expressions in `run:` bodies (including comments). Intentional command inputs use
@@ -66,7 +67,10 @@ legacy coverage configuration.
 
 The following notes record decisions and evidence before issue #113. Tool versions,
 installer assets, old flag-floor guards, fixture names and corresponding CI jobs below
-are historical; use the current architecture above and code for v2 behavior.
+are historical; use the current architecture above and code for v2 behavior. Issue and
+pull-request numbers (`#5`, `#57`, `#76`, ...) in these notes, and the dates, refer to
+`action-works/omni-dev-coverage-check`, where this history was made; they do not resolve in
+this repository's tracker.
 
 ## Key Technical Details
 
@@ -1713,8 +1717,10 @@ are historical; use the current architecture above and code for v2 behavior.
     `origin/main..HEAD`, and a queue-style `Merge pull request #N` commit on top of a conventional one
     linted clean locally (omni-dev 0.45.0). The concurrency groups key on `github.ref` and
     `cancel-in-progress` is for `pull_request` only, so queue runs do not cancel each other.
-  - **Ruleset settings**, applied by hand on 2026-10-04 as the ruleset `main` (id 24451641, enforcement
-    `active`; read or change it with `gh api repos/action-works/omni-dev-coverage-check/rulesets/24451641`
+  - **Ruleset settings**, applied by hand on 2026-10-04 as the ruleset `main` (id 24451641 in
+    `action-works/omni-dev-coverage-check`; recreated unchanged on 2026-10-07 in this repository as id
+    24582753, enforcement `active`; read or change it with
+    `gh api repos/action-works/patchcov-action/rulesets/24582753`
     or in the repository settings, since it is not kept in the repository) once `ci-gate` had passed
     on a `push` to `main`: merge method `MERGE`, because the baseline walk relies on
     the first-parent commits of `main` being merged pull requests, each with its own baseline;

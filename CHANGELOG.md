@@ -2,6 +2,10 @@
 
 ## Unreleased — v2 (breaking)
 
+- Move the action to `action-works/patchcov-action`, copied from
+  `action-works/omni-dev-coverage-check`. GitHub does not redirect `uses:` references, so
+  callers change `uses: action-works/omni-dev-coverage-check@v2` to
+  `uses: action-works/patchcov-action@v2`.
 - Run coverage diffs and gates with patchcov, with a default pin of 0.1.1.
 - Install versioned Linux and macOS x64/ARM64 archives or `cargo install patchcov`;
   isolate the patchcov cache. Windows has no pre-built asset. Linux binaries require
@@ -13,6 +17,6 @@
 
 Before adopting v2, migrate `.omni-dev/coverage.yaml` to `.patchcov/config.yaml`,
 `OMNI_DEV_CONFIG_DIR` to `PATCHCOV_CONFIG_DIR`, and `omni-dev: coverage` markers to
-`patchcov: coverage`. See [README migration instructions](README.md#migrating-from-v1-to-v2).
-The repository name and coverage pipeline inputs remain the same. No compatibility
+`patchcov: coverage`. See [README migration instructions](README.md#migrating-from-omni-dev-coverage-check).
+The coverage pipeline inputs remain the same. No compatibility
 aliases or dual-tool mode are provided. This PR does not publish or move release tags.

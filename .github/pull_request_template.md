@@ -38,7 +38,7 @@ Fixes #(issue_number)
 
 **Example Test Workflow:**
 ```yaml
-- uses: action-works/omni-dev-coverage-check@this-branch
+- uses: action-works/patchcov-action@this-branch
   with:
     worktree-system-deps: libasound2-dev
 ```

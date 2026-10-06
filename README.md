@@ -2,12 +2,23 @@
 
 A GitHub Action that runs code-coverage analysis and posts a diff/patch-coverage pull-request comment using [patchcov](https://github.com/rust-works/patchcov).
 
-The coverage analysis uses [patchcov](https://github.com/rust-works/patchcov); the Rust coverage run uses cargo-llvm-cov. The repository name remains `omni-dev-coverage-check`.
+The coverage analysis uses [patchcov](https://github.com/rust-works/patchcov); the Rust coverage run uses cargo-llvm-cov. This repository was previously named `omni-dev-coverage-check`.
 
-## Migrating from v1 to v2
+## Migrating from omni-dev-coverage-check
 
-v2 switches from `omni-dev coverage diff` to `patchcov diff`. Update the action reference
-to `action-works/omni-dev-coverage-check@v2`. The repository name stays the same.
+This action continues `action-works/omni-dev-coverage-check`, which ran v1 and the first v2
+releases. GitHub does not redirect `uses:` references to a renamed or copied repository, so
+update every workflow that calls the old action:
+
+```yaml
+# before
+- uses: action-works/omni-dev-coverage-check@v2
+# after
+- uses: action-works/patchcov-action@v2
+```
+
+v2 switches from `omni-dev coverage diff` to `patchcov diff`; a caller still on v1 also needs
+the changes below.
 
 - Replace any omni-dev `version` pin with a patchcov version, such as `0.1.1`, or omit
   it to use the pinned default. Explicit `latest` is still supported.
@@ -62,7 +73,7 @@ jobs:
         with:
           fetch-depth: 0          # full history so `git merge-base` resolves the fork point
 
-      - uses: action-works/omni-dev-coverage-check@v2
+      - uses: action-works/patchcov-action@v2
 ```
 
 That single step installs `patchcov`, runs `cargo-llvm-cov`, posts the PR comment, publishes the baseline on `main`, and enforces `--fail-under-lines 30`.
@@ -109,7 +120,7 @@ the flag; the action stops with that message if the installed one does not. Set
     # produce coverage-head.lcov however you like
     cargo llvm-cov --all-features --workspace --lcov --output-path coverage-head.lcov
 
-- uses: action-works/omni-dev-coverage-check@v2
+- uses: action-works/patchcov-action@v2
   with:
     run-coverage: false
     report: coverage-head.lcov
@@ -165,7 +176,7 @@ jobs:
           pattern: coverage-shard-*
           merge-multiple: true      # every shard file lands in one directory
           path: shards
-      - uses: action-works/omni-dev-coverage-check@v2
+      - uses: action-works/patchcov-action@v2
         with:
           run-coverage: false
           shard-reports: shards/shard-*.lcov
@@ -281,7 +292,7 @@ run, and their coverage lands in the head report and the line gate:
     path: ~/.cache/my-model            # model is cached across runs
     key: my-model-v1
 
-- uses: action-works/omni-dev-coverage-check@v2
+- uses: action-works/patchcov-action@v2
   with:
     setup-commands: cargo run --bin my-tool -- install-model
     extra-test-commands: |
@@ -564,7 +575,7 @@ because two programs compute coverage here and they do not read a pattern alike:
 same:
 
 ```yaml
-- uses: action-works/omni-dev-coverage-check@v2
+- uses: action-works/patchcov-action@v2
   with:
     ignore-filename-regex: 'src/voice/backends/voxtral_mlx/'
     llvm-cov-ignore-filename-regex: 'src/voice/backends/voxtral_mlx/'
@@ -676,7 +687,7 @@ Four inputs are not a plain value:
 ## Example: pinned version, codecov upload, and a patch gate
 
 ```yaml
-- uses: action-works/omni-dev-coverage-check@v2
+- uses: action-works/patchcov-action@v2
   with:
     version: 0.1.1
     fail-under-lines: 60
