@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/patch.svg" alt="Patch, the patchcov hermit crab, mending a hole in its quilted shell" width="200">
+</p>
+
 # Patchcov Coverage Check Action
 
 A GitHub Action that runs code-coverage analysis and posts a diff/patch-coverage pull-request comment using [patchcov](https://github.com/rust-works/patchcov).
