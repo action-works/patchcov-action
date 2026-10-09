@@ -251,7 +251,15 @@ jobs:
       # misses it whatever this pull request changes. The head covers 21 of them
       # (65.6%) and a single shard at most 14 (43.75%).
       - name: Commit the fixture crate locally
-        run: bash tests/prepare-shard-crate.sh --commit
+        run: |
+          bash tests/prepare-shard-crate.sh --commit
+          # The downloaded baseline measures this synthetic path too, but the
+          # crate exists only in this local head commit, not at the base revision.
+          # Patchcov 0.4.0 checks baseline paths against that revision. Allow this
+          # intentional mismatch only in the fixture job; the existing delta,
+          # comment and gate assertions still check the baseline is consumed.
+          mkdir -p .patchcov
+          printf 'diff:\n  allow-path-mismatch: true\n' > .patchcov/config.yaml
 
       - uses: actions/download-artifact@v8
         with:

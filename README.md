@@ -31,7 +31,9 @@ convert them. Keep `.omni-dev/` settings used by other omni-dev commands.
 ## Migrating to the patchcov 0.4.0 default
 
 The action now installs patchcov 0.4.0 by default. A nonempty head, shard or
-baseline report whose paths match no tracked file fails with exit code 7. On a
+baseline report whose paths match no tracked file fails with exit code 7.
+The action checks head paths against tracked files in the checkout and baseline
+paths against tracked files at the base revision. On a
 pull request, this stops the Build coverage diff step before the comment posts.
 Correct `strip-prefix` so report paths resolve to tracked files in the checkout.
 If accepting unmatched paths is intentional, commit this native configuration
