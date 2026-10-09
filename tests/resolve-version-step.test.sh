@@ -239,7 +239,7 @@ expect_no_release() { # <name> <version as the script sees it> <value the messag
   eq "$1: it logs one error and nothing else" 1 "$(grep -c . <<<"$LOG" || true)"
   has "$1: the error names the input" "$LOG" "::error::The 'version' input"
   has "$1: the error quotes what it was given" "$LOG" "(got '$3')"
-  has "$1: the error offers a release number" "$LOG" "a release number such as 0.1.1"
+  has "$1: the error offers a release number" "$LOG" "a release number such as 0.4.0"
   has "$1: the error offers latest" "$LOG" "or to 'latest'"
   lacks "$1: the token is not printed" "$LOG" "SENTINEL"
 }
@@ -278,7 +278,7 @@ expect_bad_char() { # <name> <version as the script sees it> <value the message 
   has "$1: the error names the input and the problem" "$LOG" \
     "::error::The 'version' input holds a character that a release number is not written with"
   has "$1: the error quotes what it was given, printable" "$LOG" "(got '$3')"
-  has "$1: the error offers a release number" "$LOG" "a release number such as 0.1.1"
+  has "$1: the error offers a release number" "$LOG" "a release number such as 0.4.0"
   has "$1: the error offers latest" "$LOG" "or to 'latest'"
   lacks "$1: the token is not printed" "$LOG" "SENTINEL"
 }
@@ -831,7 +831,7 @@ has "input: github-token is optional, so a workflow needs no configuration" \
 # should not have to read the script to learn it works. The capital is accepted
 # too (#51), and the input says that, not only "a leading v".
 has "input: version says a leading v or V is accepted" "$VERSION_INPUT" \
-  "with or without a leading v or V (e.g., 0.1.1 or v0.1.1)"
+  "with or without a leading v or V (e.g., 0.4.0 or v0.4.0)"
 
 # The runner evaluates every expression in a `run:` script before bash sees it,
 # whether it sits in a message or a comment and whether or not a backslash precedes
