@@ -1339,9 +1339,11 @@ are historical; use the current architecture above and code for v2 behavior.
     not `actions: read`.
 - **Fat-mode integration job**: the action runs cargo at the workspace root and a
   caller cannot give a composite action's steps a working directory, so the job
-  copies the fixture crate there (it refuses to run if a root `Cargo.toml` or `src/`
-  exists). It sets `recompute-baseline: false`: the fixture is not in git history,
-  so the merge-base worktree a pull request builds would have no `Cargo.toml`
+  copies the fixture crate there with `tests/prepare-fat-crate.sh` and commits it
+  locally (never pushed), so the report paths match tracked files for `patchcov diff`.
+  Preparation refuses existing destination paths and any fixture file Git skips.
+  It sets `recompute-baseline: false`: the local commit leaves the real merge-base
+  unchanged, so the merge-base worktree a pull request builds would have no `Cargo.toml`
   (`pr-paths.yml` covers the recompute with a crate it commits itself). The
   action writes `codecov.json`, `coverage-summary.txt` and `coverage.md` to fixed
   names, so `tests/move-outputs.sh` moves each scenario's outputs to `out/<id>/`

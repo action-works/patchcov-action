@@ -76,6 +76,9 @@ jobs:
       - name: Test prepare-shard-crate.sh
         run: bash tests/prepare-shard-crate.test.sh
 
+      - name: Test fat-mode fixture preparation
+        run: bash tests/prepare-fat-crate.test.sh
+
       - name: Test check-deprecated-flags.sh
         run: bash tests/check-deprecated-flags.test.sh
 

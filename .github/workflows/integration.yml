@@ -879,13 +879,9 @@ jobs:
       # composite action's steps a working directory, so the committed fixture
       # crate is copied there. Only this job's checkout gets a root Cargo.toml.
       # The crate has no dependencies, so there is no lockfile to commit.
-      - name: Copy the fixture crate to the workspace root
+      - name: Copy and commit the fixture crate locally
         run: |
-          if [ -e Cargo.toml ] || [ -e src ]; then
-            echo "::error::Cargo.toml or src/ already exists at the repository root; the fixture would overwrite it"
-            exit 1
-          fi
-          cp -R tests/fixtures/fat-crate/. .
+          bash tests/prepare-fat-crate.sh
           mkdir out
 
       # Every `cargo llvm-cov report` merges all the raw profiles unless they were
@@ -915,7 +911,7 @@ jobs:
       # test needs, so it fails unless setup ran first. The setup test runs with
       # profiling off, so `setup_only` must stay uncovered; the extra test is
       # profiled, so `extra_only` must be covered. `recompute-baseline` is off
-      # because the fixture is not in git history, so the merge-base worktree
+      # because the fixture commit is local to HEAD, so the merge-base worktree
       # that a pull request would build has no Cargo.toml.
       - name: 'F1. Full configuration, gate below the fixture coverage'
         id: f1
