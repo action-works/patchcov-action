@@ -79,6 +79,9 @@ jobs:
       - name: Test e2e-sharded wiring
         run: bash tests/e2e-sharded-wiring.test.sh
 
+      - name: Test integration and PR-paths fixture wiring
+        run: bash tests/workflow-fixture-wiring.test.sh
+
       - name: Test fat-mode fixture preparation
         run: bash tests/prepare-fat-crate.test.sh
 
