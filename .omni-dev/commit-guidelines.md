@@ -1,4 +1,4 @@
-# omni-dev-coverage-check Commit Guidelines
+# patchcov-action Commit Guidelines
 
 This project follows conventional commit format with specific requirements.
 
