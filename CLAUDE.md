@@ -1481,6 +1481,14 @@ this repository's tracker.
     it keys the baseline lookup and would force a miss on every run. Every job copies
     the crate to the same path under the same workspace root, which is what lines the
     shards' report paths up with the diff.
+  - **The `publish` job commits the crate too (#11).** Its B1 step runs the thin-mode line
+    gate, and patchcov 0.4.0 fails (exit 7) a report whose paths match no tracked file;
+    the report's only path, `sharded-crate/src/lib.rs`, is untracked on a bare `main`
+    checkout. Until #11 that failed every push to `main` and no baseline was published.
+    `prepare-shard-crate.sh --commit` runs before B1; the commit stays local, and the artifact
+    is still the combined shard report with its `TN:<sha>` tags (`GITHUB_SHA`, not `HEAD`).
+    Rejected: `diff.allow-path-mismatch` as in the `pull-request` job, which would let the
+    line gate pass on a report that matches nothing. Only a push run shows it on a runner.
   - A push runs every test; a pull request skips `t4_delta`, so a baseline hit shows
     the total falling (87.5% to 65.6%) and the comparison is shown the right way round.
     A change to which tests run must change the expectations marked `delta`.

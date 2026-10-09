@@ -118,4 +118,14 @@ added="$(git -C "$d" diff --numstat "$mb" HEAD -- sharded-crate/src/lib.rs | cut
 pass "merge-base..HEAD adds every line of the crate's source ($lines)" test "$added" = "$lines"
 pass "the merge-base is the real one, not the script's commit" test "$mb" = "$(git -C "$d" rev-parse origin/main)"
 
+# The publish job (#11): B1's line gate validates the report's paths against the
+# tracked files, so the crate must be committed before B1 and no mismatch allowed.
+# Nothing else reads the workflow, and the job runs on a push to main only.
+wf="$ROOT/.github/workflows/e2e-sharded.yml"
+publish="$(awk '/^  publish:/ { on = 1; next } /^  [a-z-]+:/ { on = 0 } on' "$wf")"
+commit_line="$(printf '%s\n' "$publish" | grep -n 'prepare-shard-crate.sh --commit' | head -1 | cut -d: -f1)"
+b1_line="$(printf '%s\n' "$publish" | grep -n 'name: .B1\. ' | head -1 | cut -d: -f1)"
+pass "publish commits the crate ahead of B1" test -n "$commit_line" -a -n "$b1_line" -a "${commit_line:-999}" -lt "${b1_line:-0}"
+fail "publish allows no path mismatch" grep -q 'allow-path-mismatch:' <<<"$publish"
+
 summary
