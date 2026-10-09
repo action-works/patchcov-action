@@ -4,8 +4,8 @@ name: Integration
 # mode against fixture lcov files (the thin-mode line gate and `shard-reports`,
 # filename filtering, version spelling, latest redirect resolution and Ubuntu
 # 22.04/24.04 binary compatibility. The missing-assets control pins 0.1.0; normal
-# legs pin 0.1.1 or request latest. A real deprecated-flag control confirms the
-# warning reader can see a warning. Required check names remain unchanged.
+# legs pin 0.4.0 or request latest, with one x64 0.1.1 floor leg. A real
+# deprecated-flag control confirms the warning reader can see a warning. Required check names remain unchanged.
 #
 # Rules that keep these tests honest:
 #   - One patchcov version per job. `actions/cache` saves in a post step, after
@@ -91,7 +91,7 @@ env:
 
 jobs:
   # The thin-mode scenarios on x86_64 and on ARM64 Linux. The ARM64 legs are the install
-  # that succeeds on ARM64 (#20): a release that carries `patchcov-v0.1.1-aarch64-unknown-linux-gnu.tar.gz`,
+  # that succeeds on ARM64 (#20): a release that carries `patchcov-v0.4.0-aarch64-unknown-linux-gnu.tar.gz`,
   # downloaded, extracted and run on a real ARM64 runner. `arm64-release-without-asset`
   # below is the other half: the same runner on a release without the asset, which must
   # fail (its inputs differ from these in more than the version: it turns the line gate
@@ -121,10 +121,12 @@ jobs:
         include:
           # Pinned release and latest both exercise the thin-mode line gate.
           # `latest` catches a bad future release.
+          - { patchcov: '0.4.0', runner: ubuntu-latest, arch: X64 }
+          # Keep the first usable binary release as the x64 compatibility floor.
           - { patchcov: '0.1.1', runner: ubuntu-latest, arch: X64 }
           - { patchcov: 'latest', runner: ubuntu-latest, arch: X64 }
-          # ARM64 assets are available in 0.1.1, with a glibc 2.35 floor.
-          - { patchcov: '0.1.1', runner: ubuntu-24.04-arm, arch: ARM64 }
+          # Exercise the pinned release on ARM64 too.
+          - { patchcov: '0.4.0', runner: ubuntu-24.04-arm, arch: ARM64 }
           - { patchcov: 'latest', runner: ubuntu-24.04-arm, arch: ARM64 }
     steps:
       - uses: actions/checkout@v4
@@ -136,7 +138,7 @@ jobs:
       # says how, by event). The script is called as an assignment: inside an `echo` its
       # failure would be lost under `bash -e`. `hashFiles` is an expression, so the hash
       # arrives through `env`, with the leg: a pinned leg and `latest` can resolve to the
-      # same key (ARM64 0.1.1 and latest do), and the one that finishes first would save
+      # same key (ARM64 0.4.0 and latest do), and the one that finishes first would save
       # the entry the other restores, so the other would not run the install.
       - name: Choose the patchcov cache prefix
         id: install-cache
@@ -357,7 +359,7 @@ jobs:
           fi
           exit "$status"
 
-  # Patchcov 0.1.1 supports the older glibc 2.35 image as well as Ubuntu 24.04.
+  # Patchcov 0.4.0 supports the older Ubuntu 22.04 image as well as Ubuntu 24.04.
   linux-compatibility:
     name: Linux compatibility (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
@@ -372,7 +374,7 @@ jobs:
       - name: Install and run pinned patchcov
         uses: ./
         with:
-          version: '0.1.1'
+          version: '0.4.0'
           cache-prefix: compatibility-${{ matrix.runner }}-${{ github.run_id }}-${{ github.run_attempt }}-
           run-coverage: false
           report: single.lcov
@@ -384,7 +386,7 @@ jobs:
           baseline-workflow: integration.yml
           baseline-ancestor-depth: 0
       - name: Assert installed version
-        run: bash tests/assert-patchcov-version.sh 0.1.1
+        run: bash tests/assert-patchcov-version.sh 0.4.0
       - name: Verify real patchcov reads report fixtures
         run: bash tests/check-native-patchcov.sh
       - name: Remove disposable cache binary
@@ -399,7 +401,7 @@ jobs:
       matrix:
         # Pinned release and latest exercise filtering; latest catches a
         # bad future release.
-        patchcov: ['0.1.1', 'latest']
+        patchcov: ['0.4.0', 'latest']
     steps:
       - uses: actions/checkout@v4
         with:
@@ -641,16 +643,16 @@ jobs:
           bash tests/assert-patchcov-version.sh "$VERSION" || status=1
           exit "$status"
 
-  # A `version` written as a release tag, `v0.1.1`, through the whole install (#52).
+  # A `version` written as a release tag, `v0.4.0`, through the whole install (#52).
   # `tests/resolve-version-step.test.sh` runs the strip on its own; this runs what comes
   # after it on a runner: the platform step's download URL, the install, and the
   # `version` and `release-tag` outputs a caller reads. A step that read `inputs.version`
-  # instead of the resolved value would build `vv0.1.1`, which 404s (#38), and the unit
+  # instead of the resolved value would build `vv0.4.0`, which 404s (#38), and the unit
   # test would stay green.
   #
   # Only a run that reaches the download can see that, and the platform and download
   # steps are skipped on a cache hit. Left on the default key, which is the one the
-  # ignore-filename-regex job's 0.1.1 leg saves and a `v0.1.1` pin resolves to, this job would hit
+  # ignore-filename-regex job's 0.4.0 leg saves and a `v0.4.0` pin resolves to, this job would hit
   # the cache after the first run on `main` and check only the outputs. So each leg
   # builds its key from the run, the attempt and its own pin (`cache-prefix`): it cannot
   # exist, and the install runs every time. The assertion step checks that it did, and
@@ -661,14 +663,14 @@ jobs:
   #
   # A leg per spelling, each its own job, so that the binary on PATH can only have come
   # from that leg's install: in one job, a second install would put it there even if the
-  # first had failed at the 404. `0.1.1` is the control for `v0.1.1` (only `version`
+  # first had failed at the 404. `0.4.0` is the control for `v0.4.0` (only `version`
   # and the text of the prefix that carries it differ) and must give the same outputs.
   # The matrix cannot read `env`, so the pins are literals; the outputs expected below
   # are literals too, because both spellings must come out the same.
   #
   # Thin mode with the line gate off, so nothing but the install is in play, and no cargo
   # build. The `use-prebuilt-binary: false` path compiles patchcov and has no leg: cargo
-  # refuses `v0.1.1` outright (#38). It reads the resolved `version`, which the unit test
+  # refuses `v0.4.0` outright (#38). It reads the resolved `version`, which the unit test
   # pins has no `v`; nothing pins that it reads that and not `inputs.version`.
   version-pin:
     name: Pinned version (${{ matrix.pin }})
@@ -676,7 +678,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        pin: ['v0.1.1', '0.1.1']
+        pin: ['v0.4.0', '0.4.0']
     steps:
       - uses: actions/checkout@v4
         with:
@@ -713,8 +715,8 @@ jobs:
           source tests/assert-lib.sh
 
           check "11 ($PIN): the install succeeded" success "$INSTALL"
-          check "11 ($PIN): the version output has no leading v" 0.1.1 "$VERSION"
-          check "11 ($PIN): the release-tag output is the v-prefixed tag" v0.1.1 "$RELEASE_TAG"
+          check "11 ($PIN): the version output has no leading v" 0.4.0 "$VERSION"
+          check "11 ($PIN): the release-tag output is the v-prefixed tag" v0.4.0 "$RELEASE_TAG"
 
           # The install ran in this job. The key is unique to the run, the attempt and the pin
           # on every event, so nothing could have saved an entry for it: a hit means the prefix
@@ -742,8 +744,8 @@ jobs:
           exit "$status"
 
       # Last, so the assertions above see the binary. The cache key is unique to this
-      # run, so what the cache's post step would save is never restored: an entry of about
-      # 18 MiB per leg per run (0.1.1's is 17.66 MiB), against a repository cache of
+      # run, so what the cache's post step would save is never restored: one
+      # version-dependent binary per leg per run, against a repository cache of
       # about 200 MB in all, which would push out the entries the other jobs reuse. With
       # no file at the cached path it saves nothing and logs a warning about the missing
       # path.
@@ -760,7 +762,7 @@ jobs:
   # must stop at the resolve step, before the shards are combined: a missing combined
   # report shows where. 12c differs from them in `version` alone, so it is their control,
   # and it is the capital V's decision (accepted) run on a runner: the outputs are the
-  # lowercase-v spelling's and the binary is that release's. It installs 0.1.1, the
+  # lowercase-v spelling's and the binary is that release's. It installs 0.4.0, the
   # release the thin-mode job's first leg installs, so the two write the same cache key
   # by design; each is its own job, so neither poisons the other.
   version-input:
@@ -816,7 +818,7 @@ jobs:
         uses: ./
         continue-on-error: true
         with:
-          version: V0.1.1
+          version: V0.4.0
           run-coverage: false
           shard-reports: shards/shard-*.lcov
           report: out/capital-v.lcov
@@ -850,8 +852,8 @@ jobs:
 
           check "12c. a capital V is accepted" success "$CAPITAL_V"
           assert "12c: got past the install: the shards were combined" test -s out/capital-v.lcov
-          check "12c: the version output has no V" 0.1.1 "$VERSION"
-          check "12c: the release-tag output has a lowercase v" v0.1.1 "$RELEASE_TAG"
+          check "12c: the version output has no V" 0.4.0 "$VERSION"
+          check "12c: the release-tag output has a lowercase v" v0.4.0 "$RELEASE_TAG"
 
           # On a pull request 12c also ran the comment and percentages diffs, and the
           # failure-messages job reads this job's log for a deprecation warning from
@@ -1333,7 +1335,7 @@ jobs:
           # the thin-mode matrix runs it; keep the legs in step with that matrix (each is
           # the job's name with the version, then `, ARM64` on an ARM64 runner). The
           # pattern is the one in scenario 4's `shard-reports`.
-          for leg in '0.1.1' 'latest' '0.1.1, ARM64' 'latest, ARM64'; do
+          for leg in '0.4.0' '0.1.1' 'latest' '0.4.0, ARM64' 'latest, ARM64'; do
             if errors="$(bash tests/job-errors.sh "Thin mode (patchcov $leg)")"; then
               expect "4 (patchcov $leg): the pattern that matched nothing is named" "$errors" \
                 "shard-reports pattern 'shards/missing-*.lcov' matched no files"
@@ -1388,7 +1390,7 @@ jobs:
           # refusal's own first words.
           refusal="The 'ignore-filename-regex' input holds a space or tab beside a comma"
           block_refusal="The 'ignore-filename-regex' input holds a line break"
-          for leg in '0.1.1' 'latest'; do
+          for leg in '0.4.0' 'latest'; do
             if errors="$(bash tests/job-errors.sh "Ignore filename regex (patchcov $leg)")"; then
               expect "8c (patchcov $leg): the refusal names the input and what it holds" "$errors" \
                 "$refusal" "(got '-nomatch\\.txt, ^LICENSE\$')"
@@ -1417,9 +1419,9 @@ jobs:
             expect "12b: a version that is only a v is refused, and the message quotes it" "$errors" \
               "$refused" "(got 'v')"
             expect "12a: the message offers a release number" "$errors" \
-              "$refused" "(got '')" "a release number such as 0.1.1"
+              "$refused" "(got '')" "a release number such as 0.4.0"
             expect "12b: the message offers a release number" "$errors" \
-              "$refused" "(got 'v')" "a release number such as 0.1.1"
+              "$refused" "(got 'v')" "a release number such as 0.4.0"
             expect "12a: the message offers 'latest'" "$errors" \
               "$refused" "(got '')" "or to 'latest'"
             expect "12b: the message offers 'latest'" "$errors" \

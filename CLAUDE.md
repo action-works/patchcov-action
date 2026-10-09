@@ -11,10 +11,10 @@ cargo-llvm-cov. Repository/action references remain `omni-dev-coverage-check`.
   `eval`; test arguments and apt package inputs split on whitespace with validation.
 - `scripts/patchcov-asset.sh`: Linux/macOS x64 and ARM64 target mapping with resolved
   release tags. No Windows asset. Nested archives hold `<asset without .tar.gz>/patchcov`.
-- Installer: default 0.1.1, explicit latest API lookup with authenticated requests and
+- Installer: default 0.4.0, explicit latest API lookup with authenticated requests and
   redirect fallback; cache `~/.cargo/bin/patchcov` by version, OS, architecture and method.
   Source installs need no audio libraries. Dynamic loader errors name missing glibc
-  requirements; pinned 0.1.1 needs glibc 2.35 (Ubuntu 22.04).
+  requirements; pinned 0.4.0 runs on Ubuntu 22.04 and newer.
 - `scripts/check-legacy-config.sh`: advisory warning for `.omni-dev/coverage.yaml`,
   `OMNI_DEV_CONFIG_DIR` and old markers in tracked source. Read README's v2 migration.
 - `scripts/combine-shards.sh`: validate and combine caller reports. Preserve report

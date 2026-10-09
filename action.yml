@@ -11,9 +11,9 @@ inputs:
   # patchcov install + cache
   # ---------------------------------------------------------------------------
   version:
-    description: 'patchcov version to install: a release number with or without a leading v or V (e.g., 0.1.1 or v0.1.1), or latest. An empty value, only a v or V, or a value with a character a release number is not written with (a newline, a /, a quote) fails the step'
+    description: 'patchcov version to install: a release number with or without a leading v or V (e.g., 0.4.0 or v0.4.0), or latest. An empty value, only a v or V, or a value with a character a release number is not written with (a newline, a /, a quote) fails the step'
     required: false
-    default: '0.1.1'
+    default: '0.4.0'
   github-token:
     description: 'Token used to authenticate GitHub API calls when resolving `version: latest`. Authenticated requests use the 1000/hr rate limit instead of the 60/hr unauthenticated, shared-runner-IP limit that intermittently fails resolution. Defaults to the workflow token'
     required: false
@@ -338,7 +338,7 @@ runs:
         fi
         # Release tags carry a leading v, so a caller may pin one as written. Drop it
         # from whatever came in, not only from the tag above: left in, release-tag
-        # becomes vv0.1.1, the download 404s and `cargo install --version` refuses it.
+        # becomes vv0.4.0, the download 404s and `cargo install --version` refuses it.
         # A capital V is dropped too: it has one reading, and release-tag stays lowercase.
         given="$VERSION"
         VERSION="${VERSION#[vV]}"
@@ -347,7 +347,7 @@ runs:
         # cache key ending --binary), the download 404s and the platform step blames
         # the release rather than this input.
         if [ -z "$VERSION" ]; then
-          echo "::error::The 'version' input names no release (got '$given'). Set it to a release number such as 0.1.1 or v0.1.1, or to 'latest'."
+          echo "::error::The 'version' input names no release (got '$given'). Set it to a release number such as 0.4.0 or v0.4.0, or to 'latest'."
           exit 1
         fi
         # The value goes into the step's outputs, a cache key, the download URL and
@@ -370,7 +370,7 @@ runs:
             # message would start another workflow command on the next line.
             shown="${given//[^[:print:]]/?}"
             [ "${#shown}" -le 60 ] || shown="${shown:0:60}..."
-            echo "::error::The 'version' input holds a character that a release number is not written with (got '$shown'). It may hold letters, digits and . + - * ^ ~ < > = and spaces. Set it to a release number such as 0.1.1 or v0.1.1, or to 'latest'."
+            echo "::error::The 'version' input holds a character that a release number is not written with (got '$shown'). It may hold letters, digits and . + - * ^ ~ < > = and spaces. Set it to a release number such as 0.4.0 or v0.4.0, or to 'latest'."
             exit 1
             ;;
         esac

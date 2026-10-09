@@ -10,7 +10,7 @@ work_dir
 # shellcheck source-path=SCRIPTDIR
 # shellcheck source=step-lib.sh
 source "$(dirname "${BASH_SOURCE[0]}")/step-lib.sh"
-has 'default is first usable binary release' "$(input_block version)" "default: '0.1.1'"
+has 'default pins patchcov 0.4.0' "$(input_block version)" "default: '0.4.0'"
 CACHE="$(step_block 'Cache patchcov binary')"
 has 'cache stores only patchcov' "$CACHE" 'path: ~/.cargo/bin/patchcov'
 has 'cache key cannot restore an omni-dev entry' "$CACHE" '}patchcov-'

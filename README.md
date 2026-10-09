@@ -13,7 +13,7 @@ The coverage analysis uses [patchcov](https://github.com/rust-works/patchcov); t
 v2 switches from `omni-dev coverage diff` to `patchcov diff`. Update the action reference
 to `action-works/omni-dev-coverage-check@v2`. The repository name stays the same.
 
-- Replace any omni-dev `version` pin with a patchcov version, such as `0.1.1`, or omit
+- Replace any omni-dev `version` pin with a patchcov version, such as `0.4.0`, or omit
   it to use the pinned default. Explicit `latest` is still supported.
 - Rename output references from `omni-dev-cache-hit` to `patchcov-cache-hit`.
   The existing `version` and `release-tag` outputs now describe patchcov.
@@ -27,6 +27,28 @@ Patchcov ignores the old configuration, environment variable and markers. Withou
 migration, exclusions may disappear and measured coverage may change. The action warns
 when it detects these legacy settings or markers in tracked source files; it does not
 convert them. Keep `.omni-dev/` settings used by other omni-dev commands.
+
+## Migrating to the patchcov 0.4.0 default
+
+The action now installs patchcov 0.4.0 by default. A nonempty head, shard or
+baseline report whose paths match no tracked file fails with exit code 7. On a
+pull request, this stops the Build coverage diff step before the comment posts.
+Correct `strip-prefix` so report paths resolve to tracked files in the checkout.
+If accepting unmatched paths is intentional, commit this native configuration
+in `.patchcov/config.yaml`:
+
+```yaml
+diff:
+  allow-path-mismatch: true
+```
+
+Patchcov reads this configuration from the checkout when the action runs. The
+opt-out applies to path mismatch; other report errors still fail.
+
+Coverage gates still exit 1. Other failures now have distinct exit codes:
+2 (usage), 3 (report), 4 (marker), 5 (config), 6 (git), 7 (path mismatch), and
+8 (other). Caller scripts should test for a nonzero status rather than only 1.
+An explicit `version: '0.1.1'` retains the previous release's behavior.
 
 ## Features
 
@@ -306,7 +328,7 @@ Both hooks are shell, evaluated in one `bash`: see
 
 | Input                 | Description                                                                                             | Default               |
 |-----------------------|--------------------------------------------------------------------------------------------------------|-----------------------|
-| `version`             | patchcov version to install (e.g. `0.1.1`, `v0.1.1`, `latest`); leading `v`/`V` is dropped; see below | `0.1.1`               |
+| `version`             | patchcov version to install (e.g. `0.4.0`, `v0.4.0`, `latest`); leading `v`/`V` is dropped; see below | `0.4.0`               |
 | `github-token`        | Token authenticating the GitHub API call that resolves `version: latest` (1000/hr vs 60/hr unauthed)   | `${{ github.token }}` |
 | `use-prebuilt-binary` | Download a pre-built release binary instead of `cargo install` from source                             | `true`                |
 | `cache-prefix`        | Prefix prepended to the patchcov binary cache key                                                       | `''`                  |
@@ -322,14 +344,14 @@ and logs a warning saying so, with the API's reason. It fails only if that fails
 GitHub-hosted runners have. On a runner without it the API is not asked: the step goes straight to the redirect and
 logs a warning that names `jq`, and the error, if the redirect fails too, says the API was not asked. Install `jq`
 to use the API.)
-A pinned `version` makes no request, and may be written as a release tag is, with a leading `v`: `v0.1.1` and
-`0.1.1` give the same `version` (`0.1.1`) and `release-tag` (`v0.1.1`) outputs and share one cache entry. A
-capital `V` is accepted the same way (`V0.1.1`), and `release-tag` stays lowercase. Only one leading character is
-dropped, so `vv0.1.1` stays visibly wrong. A value with nothing left after that, an empty `version` or just
+A pinned `version` makes no request, and may be written as a release tag is, with a leading `v`: `v0.4.0` and
+`0.4.0` give the same `version` (`0.4.0`) and `release-tag` (`v0.4.0`) outputs and share one cache entry. A
+capital `V` is accepted the same way (`V0.4.0`), and `release-tag` stays lowercase. Only one leading character is
+dropped, so `vv0.4.0` stays visibly wrong. A value with nothing left after that, an empty `version` or just
 `v` or `V`, fails the step at once with a message naming the input, instead of failing later in a step that blames the
-release: give a release number, or leave `version` out to get the default `0.1.1`.
+release: give a release number, or leave `version` out to get the default `0.4.0`.
 The value goes into the step's outputs, the cache key, the download URL and `cargo install --version`, so it may hold
-only letters, digits and `. + - * ^ ~ < > =` and spaces: what a release number, a pre-release (`0.1.1-rc.1`) and
+only letters, digits and `. + - * ^ ~ < > =` and spaces: what a release number, a pre-release (`0.4.0-rc.1`) and
 the version requirements `cargo install` takes (`^0.1`, `>= 0.1`, with `use-prebuilt-binary: 'false'`) are written
 with. Anything else, a newline, a `/`, a quote or a comma (the cache key cannot hold one, so a range such as
 `>=0.1, <0.2` could not get past the next step anyway), fails the step at once with a message naming the input, rather than writing an extra
@@ -347,14 +369,14 @@ A platform with no asset, or a release with no binaries (including 0.1.0), fails
 message naming the platform or missing asset. Set `use-prebuilt-binary: 'false'` to build
 patchcov from source, or pin a release that has an asset.
 
-The 0.1.1 Linux binaries need glibc 2.35 or newer (Ubuntu 22.04 and 24.04 work).
+The 0.4.0 Linux binaries run on Ubuntu 22.04 and 24.04.
 If a binary cannot start because the runner's glibc is older, the version step reports
 the required and installed glibc versions and suggests a newer image or a source build.
 Other loader failures retain their original diagnostics.
 
 The default pin avoids the window between publishing a release and uploading its assets.
 Explicit `version: latest` still resolves the newest tag immediately: if its assets are
-not uploaded yet, rerun after the upstream release finishes or pin `0.1.1`.
+not uploaded yet, rerun after the upstream release finishes or pin `0.4.0`.
 
 ### Coverage run (fat mode)
 
@@ -682,7 +704,7 @@ Four inputs are not a plain value:
 ```yaml
 - uses: action-works/omni-dev-coverage-check@v2
   with:
-    version: 0.1.1
+    version: 0.4.0
     fail-under-lines: 60
     fail-under-patch: 80
     worktree-system-deps: libasound2-dev
