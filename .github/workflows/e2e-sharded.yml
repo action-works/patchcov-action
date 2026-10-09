@@ -26,6 +26,8 @@ name: E2E sharded
 #     never pushed), so `merge-base..HEAD` adds every line of it whatever the pull
 #     request changes. `base-ref` is NOT used for this: it keys the baseline lookup
 #     too and would force a miss.
+#     The publish job commits it too, for another reason: patchcov rejects a report
+#     whose paths match no tracked file, and the line gate there reads one.
 #   - The baseline (a push) runs every test; a pull request skips `t4_delta`. The
 #     head then covers less than the baseline, so a hit shows a real change and
 #     proves the comparison is the right way round, not just that a baseline was
@@ -142,6 +144,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      # B1 runs the thin-mode line gate, and patchcov validates the head report's
+      # paths against the tracked files. The report names `sharded-crate/src/lib.rs`,
+      # which exists only after this copy, so commit it locally (never pushed). No
+      # `allow-path-mismatch` here: the gate stays honest. The published artifact is
+      # still the combined shard report, untouched (`TN:` comes from `GITHUB_SHA`).
+      - name: Commit the fixture crate locally
+        run: bash tests/prepare-shard-crate.sh --commit
 
       - uses: actions/download-artifact@v8
         with:
