@@ -918,7 +918,24 @@ runs:
         if [ -f "baseline/$REPORT_BASENAME" ]; then
           args+=(--baseline-report "baseline/$REPORT_BASENAME")
         fi
-        patchcov "${args[@]}" -o markdown > coverage.md
+        # A failed render must leave no comment file. Patchcov's plain stderr also
+        # needs a runner annotation so callers can see the diagnostic on the PR.
+        diff_errors="$(mktemp)"
+        if patchcov "${args[@]}" -o markdown > coverage.md 2> "$diff_errors"; then
+          cat "$diff_errors" >&2
+          rm -f "$diff_errors"
+        else
+          rc=$?
+          diagnostic="$(cat "$diff_errors")"
+          cat "$diff_errors" >&2
+          rm -f "$diff_errors" coverage.md
+          diagnostic="${diagnostic:-patchcov diff failed with exit code $rc}"
+          diagnostic="${diagnostic//'%'/'%25'}"
+          diagnostic="${diagnostic//$'\r'/'%0D'}"
+          diagnostic="${diagnostic//$'\n'/'%0A'}"
+          echo "::error::$diagnostic"
+          exit "$rc"
+        fi
         # patchcov still calls the comparison merge-base -> head and the deltas "vs main",
         # so when the baseline is an ancestor's (`baseline-ancestor-depth`) the comment
         # says which one, unless the file is the merge-base's own recompute, which is what the

@@ -77,6 +77,7 @@ case "$name" in
       echo '{"patch_coverage":{"percent":50},"project_delta":{"total_after":60}}'
       exit "${OMNI_EXIT_JSON:-${OMNI_EXIT:-0}}"
     fi
+    [ -z "${OMNI_STDERR:-}" ] || printf '%s\n' "$OMNI_STDERR" >&2
     echo md
     exit "${OMNI_EXIT:-0}"
     ;;
@@ -540,6 +541,26 @@ lacks "diff: no regex, no flag" "$CALLS" "--ignore-filename-regex"
 
 run_step "$DIFF" "${diff_env[@]}" OMNI_EXIT=1
 eq "diff: a failing comment diff fails the step" 1 "$STATUS"
+absent "diff: failed partial markdown is removed" "$REPO/coverage.md"
+eq "diff: failure publishes no comment output" "" "$GH_OUTPUT"
+lacks "diff: failure stops before the JSON render" "$CALLS" "[-o] [json]"
+
+PRE='echo stale > coverage.md'
+run_step "$DIFF" "${diff_env[@]}" OMNI_EXIT=7 OMNI_STDERR=$'Error: 100% mismatch\r\nnone matches a tracked file: `untracked.rs`'
+unset PRE
+eq "diff: path-mismatch exit 7 is preserved" 7 "$STATUS"
+absent "diff: failure removes a stale comment too" "$REPO/coverage.md"
+# shellcheck disable=SC2016
+has "diff: diagnostic is one escaped runner error" "$OUT" \
+  '::error::Error: 100%25 mismatch%0D%0Anone matches a tracked file: `untracked.rs`'
+eq "diff: mismatch publishes no comment output" "" "$GH_OUTPUT"
+lacks "diff: mismatch stops before the JSON render" "$CALLS" "[-o] [json]"
+
+run_step "$DIFF" "${diff_env[@]}" OMNI_STDERR='warning: path mismatch allowed'
+eq "diff: a successful warning does not fail the step" 0 "$STATUS"
+has "diff: successful stderr reaches the log" "$OUT" 'warning: path mismatch allowed'
+lacks "diff: successful warning is not annotated as an error" "$OUT" '::error::'
+eq "diff: successful warning keeps the markdown" md "$(cat "$REPO/coverage.md")"
 
 run_step "$DIFF" "${diff_env[@]}" OMNI_EXIT_JSON=1
 eq "diff: failing percentages never fail the build" 0 "$STATUS"
