@@ -23,6 +23,16 @@ cargo-llvm-cov. The repository is `action-works/patchcov-action`; it was copied 
 - `scripts/find-baseline.sh`: find merge-base or nearest first-parent ancestor baseline.
   Trust only successful runs from this repository, with unexpired named artifacts;
   never a fork's uploaded baseline. Recompute in fat mode when lookup misses.
+- `tests/workflow-fixture-wiring.py` (via `.test.sh`): integration fat-mode actions
+  require `prepare-fat-crate.sh`; thin actions need no crate. PR-paths B1 requires
+  `write-pr-fixtures.sh baseline`, every P scenario requires `head`, P5/P6/P10 also
+  require `extra`, and R1/R2/R3 require the staged delta crate and both local commits.
+  Preparation must be an unconditional preceding step after the latest checkout;
+  conditional checkout or preparation in another working directory is rejected.
+  New PR-paths scenarios must be classified explicitly. The reader uses only Python
+  standard library and reads the current block layout, including quoted job ids;
+  flow-style steps/jobs, aliases and folded run blocks are unsupported. It checks
+  wiring, not shell execution or GitHub expressions. The e2e guard remains separate.
 - `tests/step-lib.sh`: extract actual step scripts/env/inputs for offline tests.
 - `tests/test-lib.sh` and `tests/assert-lib.sh`: local and workflow assertion helpers.
 - `tests/fixtures/patchcov-loader/`: synthetic loader diagnostic inputs, adapted from
