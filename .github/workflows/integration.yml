@@ -1235,6 +1235,113 @@ jobs:
           bash tests/assert-patchcov-version.sh "$VERSION" || status=1
           exit "$status"
 
+  # patchcov 0.4.0 rejects reports with no tracked path (#7). These diffs run
+  # only on a PR; keep the job unconditional so ci-gate can need it on every event.
+  path-mismatch:
+    name: Path mismatch (patchcov 0.4.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Write path-mismatch reports
+        if: github.event_name == 'pull_request'
+        run: |
+          printf 'SF:untracked-path-mismatch.rs\nDA:1,1\nend_of_record\n' > unmatched.lcov
+          cp unmatched.lcov control.lcov
+          printf 'SF:README.md\nDA:1,1\nend_of_record\n' >> control.lcov
+          test -z "$(git ls-files -- untracked-path-mismatch.rs)"
+          git ls-files --error-unmatch README.md
+
+      - name: 'P1. No report path matches a tracked file'
+        id: p1
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: ./
+        with:
+          version: '0.4.0'
+          run-coverage: false
+          report: unmatched.lcov
+          fail-under-lines: ''
+          comment: false
+          upload-artifacts: false
+          publish-baseline: false
+          baseline-workflow: integration.yml
+          baseline-ancestor-depth: 0
+
+      - name: Keep P1 outputs
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        run: bash tests/move-outputs.sh p1
+
+      - name: 'P2. Control adds one tracked-file record'
+        id: p2
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: ./
+        with:
+          version: '0.4.0'
+          run-coverage: false
+          report: control.lcov
+          fail-under-lines: ''
+          comment: false
+          upload-artifacts: false
+          publish-baseline: false
+          baseline-workflow: integration.yml
+          baseline-ancestor-depth: 0
+
+      - name: Keep P2 outputs and commit the opt-out config
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        run: |
+          bash tests/move-outputs.sh p2
+          mkdir -p .patchcov
+          printf 'diff:\n  allow-path-mismatch: true\n' > .patchcov/config.yaml
+          git config user.name 'integration fixture'
+          git config user.email 'integration@invalid'
+          git add .patchcov/config.yaml
+          git commit -m 'test(ci): allow path mismatch in integration fixture'
+
+      - name: 'P3. Config opts out for the original unmatched report'
+        id: p3
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: ./
+        with:
+          version: '0.4.0'
+          run-coverage: false
+          report: unmatched.lcov
+          fail-under-lines: ''
+          comment: false
+          upload-artifacts: false
+          publish-baseline: false
+          baseline-workflow: integration.yml
+          baseline-ancestor-depth: 0
+
+      - name: Keep P3 outputs
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        run: bash tests/move-outputs.sh p3
+
+      - name: Assert path-mismatch outcomes and stop points
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          P1: ${{ steps.p1.outcome }}
+          P2: ${{ steps.p2.outcome }}
+          P3: ${{ steps.p3.outcome }}
+        run: |
+          status=0
+          source tests/assert-lib.sh
+          check 'P1: no tracked path fails' failure "$P1"
+          assert 'P1: stopped before a comment file exists' test ! -e out/p1/coverage.md
+          assert 'P1: stopped before the JSON diff' test ! -e out/p1/coverage.json
+          check 'P2: one tracked record succeeds' success "$P2"
+          assert 'P2: rendered a comment' test -s out/p2/coverage.md
+          assert 'P2: rendered the JSON diff' jq -e 'type == "object"' out/p2/coverage.json
+          check 'P3: committed config opts out' success "$P3"
+          assert 'P3: rendered a comment' test -s out/p3/coverage.md
+          assert 'P3: rendered the JSON diff' jq -e 'type == "object"' out/p3/coverage.json
+          bash tests/assert-patchcov-version.sh 0.4.0 || status=1
+          exit "$status"
+
   # The control for the deprecation check in `failure-messages` (#23). No other job
   # should log an patchcov deprecation warning, and a reader that cannot see one
   # reports the same empty result. This job logs one on purpose: it calls patchcov
@@ -1293,6 +1400,7 @@ jobs:
       - version-input
       - fat-mode
       - deprecation-control
+      - path-mismatch
     runs-on: ubuntu-latest
     # The only job here with `actions: read`, which reading a job's log needs.
     # `contents: read` is the checkout: a job-level `permissions` drops the rest.
@@ -1407,6 +1515,24 @@ jobs:
               status=1
             fi
           done
+          # P1/P3 run only on pull_request. Read emitted diagnostics, never the
+          # script echo. P1 is a runner error; P3 is patchcov's plain warning.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            if errors="$(bash tests/job-errors.sh 'Path mismatch (patchcov 0.4.0)')"; then
+              expect 'P1: one error names the mismatch and unmatched path' "$errors" \
+                'matches a tracked file' 'untracked-path-mismatch.rs'
+              expect 'P1: diff preserves exit code 7' "$errors" 'Process completed with exit code 7'
+            else
+              status=1
+            fi
+            if log="$(bash tests/job-log.sh 'Path mismatch (patchcov 0.4.0)')"; then
+              warnings="$(printf '%s\n' "$log" | sed -n -E 's/^[^ ]*[0-9]Z (warning: .*)/\1/p')"
+              expect 'P3: opt-out emits the path-mismatch warning' "$warnings" \
+                'matches a tracked file' 'untracked-path-mismatch.rs'
+            else
+              status=1
+            fi
+          fi
           # 12: a version that names no release is refused by the resolve step, whose one
           # message names the input, quotes what it got and offers both ways out. Every
           # check holds the message's own first words and the value it quotes, so each is
@@ -1532,6 +1658,7 @@ jobs:
       - version-input
       - fat-mode
       - deprecation-control
+      - path-mismatch
       - failure-messages
     if: ${{ always() }}
     runs-on: ubuntu-latest
