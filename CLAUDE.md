@@ -31,6 +31,10 @@ cargo-llvm-cov. The repository is `action-works/patchcov-action`; it was copied 
 - `tests/install-cache.sh`: install code hash per matrix leg on PR/push; run/attempt
   prefixes on scheduled/manual runs so those exercise installation every time.
 - `tests/check-deprecated-flags.sh`: no deprecated patchcov `--format` in shipped code.
+- `tests/e2e-sharded-wiring.test.sh`: every `e2e-sharded.yml` job that runs the action
+  (`uses: ./`) must run `prepare-shard-crate.sh --commit` ahead of it; `allow-path-mismatch`
+  is no substitute. Text reader: it does not see a commit disabled by a step `if:`, a quoted
+  job id, or a commit placed before `actions/checkout`. See the E2E sharded notes below.
 - `.github/workflows/integration.yml`: pinned/latest x64/ARM64 thin-mode, fat-mode,
   filename filters, version spelling, redirect fallback, 0.1.0 missing-asset control,
   Ubuntu 22.04/24.04 compatibility and deprecated-flag control. No old flag-floor jobs.

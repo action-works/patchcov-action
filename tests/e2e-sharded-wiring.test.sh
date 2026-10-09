@@ -33,7 +33,7 @@ work_dir
 # wiring <workflow>: one line per job that runs the action: `ok <job>` or
 # `FAIL <job>: <reason>`. A job with no `uses: ./` is not reported.
 wiring() {
-  awk '
+  awk -v q="'" '
     function finish() {
       if (job == "" || first == 0) return
       if (commit > 0) print "ok " job
@@ -53,10 +53,14 @@ wiring() {
       line = $0
       sub(/[[:space:]]#.*$/, "", line)   # an inline comment is not read either
     }
-    line ~ /prepare-shard-crate\.sh[[:space:]]+--commit([[:space:]]|$)/ {
+    # The call must start the command (`run: bash tests/...` or a line of a `run: |` body), so an
+    # echo or a string that merely holds the text is not a commit.
+    line ~ /^[[:space:]]*(-[[:space:]]+)?(run:[[:space:]]*(\|[-+]?)?[[:space:]]*)?(bash|sh)[[:space:]]+(\.\/)?tests\/prepare-shard-crate\.sh[[:space:]]+--commit([[:space:]]|$)/ {
       if (first == 0) { if (commit == 0) commit = NR } else if (late == 0) late = NR
     }
-    line ~ /uses:[[:space:]]*["\x27]?\.\/["\x27]?[[:space:]]*$/ { if (first == 0) first = NR }
+    # The quote is passed in: a hex escape in a regex is not portable to mawk. A flow-style
+    # step (`- {uses: ./}`) is read too.
+    line ~ ("^[[:space:]]*(-[[:space:]]+)?[{]?[[:space:]]*uses:[[:space:]]*[\"" q "]?\\./[\"" q "]?([[:space:]}]|$)") { if (first == 0) first = NR }
     END { if (injobs) finish() }
   ' "$1"
 }
@@ -99,7 +103,8 @@ out="$(wiring "$REAL")"
 eq "real: no job fails" 0 "$(grep -c '^FAIL' <<<"$out")"
 has "real: publish is checked" "$out" "ok publish"
 has "real: pull-request is checked" "$out" "ok pull-request"
-lacks "real: shard runs no action and is not reported" "$out" "shard"
+eq "real: exactly those two jobs are reported (shard runs no action)" "ok publish
+ok pull-request" "$out"
 
 # --- one job at a time -----------------------------------------------------------------
 
@@ -159,6 +164,28 @@ new '      # - uses: ./
 '
 out="$(wiring "$WORK/new.yml")"
 lacks "control: a commented or quoted action is not an action" "$out" "extra"
+
+new "      - run: echo 'bash tests/prepare-shard-crate.sh --commit'
+      - uses: ./
+"
+expect_fail "a commit that is only echoed is not a commit" "$WORK/new.yml" extra "without committing the crate first"
+
+new "      - uses: './'
+"
+expect_fail "a quoted action is read" "$WORK/new.yml" extra "without committing the crate first"
+
+new "      - {uses: ./}
+"
+expect_fail "a flow-style action is read" "$WORK/new.yml" extra "without committing the crate first"
+
+new "      - name: Commit
+        run: |
+          set -e
+          bash tests/prepare-shard-crate.sh --commit
+      - uses: ./
+"
+out="$(wiring "$WORK/new.yml")"
+has "control: a commit inside a run block counts" "$out" "ok extra"
 
 # --- allow-path-mismatch is not a way out ----------------------------------------------
 
