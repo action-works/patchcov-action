@@ -22,6 +22,7 @@ def jobs(text):
     in_jobs = False
     run_indent = None
     in_steps = False
+    mapping = None
     for number, line in enumerate(text.splitlines(), 1):
         if not line.strip() or line.lstrip().startswith('#'):
             continue
@@ -51,6 +52,7 @@ def jobs(text):
             step = {'line': number, 'commands': []}
             result[job].append(step)
             run_indent = None
+            mapping = None
             field = line.strip()[2:]
             if field.startswith('{'):
                 raise ValueError(f'unsupported flow step at line {number}')
@@ -58,6 +60,7 @@ def jobs(text):
                 raise ValueError(f'unsupported step at line {number}')
             key, value = field.split(':', 1)
             step[key] = scalar(value.split(' #', 1)[0])
+            mapping = key if not value.strip() else None
             if key == 'run':
                 if value.strip() in ('|', '|-', '|+'):
                     run_indent = 10
@@ -76,7 +79,9 @@ def jobs(text):
                 key, sep, value = line.strip().partition(':')
                 if not sep:
                     raise ValueError(f'unsupported field at line {number}')
-                if key == 'run':
+                if indent == 8:
+                    mapping = key if not value.strip() else None
+                if indent == 8 and key == 'run':
                     if value.strip() in ('|', '|-', '|+'):
                         run_indent = 10
                     elif value.strip().startswith(('>', '|')):
@@ -84,7 +89,7 @@ def jobs(text):
                     else:
                         step['commands'].append(value.strip())
                 # Only step-level keys and with.run-coverage are needed.
-                if indent == 8 or key == 'run-coverage':
+                if indent == 8 or (mapping == 'with' and key == 'run-coverage'):
                     step[key] = scalar(value.split(' #', 1)[0])
     return result
 
@@ -252,6 +257,18 @@ class WiringTests(unittest.TestCase):
         text = text.replace(insertion, '      - run: bash tests/write-pr-fixtures.sh extra\n\n' + insertion)
         _, errors = check(text, 'pr')
         self.assertEqual([e.split(':')[0] for e in errors], ['pull-request/p5'])
+
+    def test_environment_is_not_executable_or_an_input(self):
+        text = self.small(
+            '      - uses: actions/checkout@v7\n'
+            '      - run: true\n'
+            '        env:\n'
+            '          run: bash tests/prepare-fat-crate.sh\n',
+            '      - uses: ./\n'
+            '        env:\n'
+            '          run-coverage: false\n',
+        )
+        self.assertTrue(check(text, 'integration')[1])
 
     def test_unsupported_layout(self):
         with self.assertRaises(ValueError):
