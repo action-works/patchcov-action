@@ -18,7 +18,9 @@
 # broken one way at a time, so each rule is shown to fail. The reader is POSIX awk (the
 # ubuntu runners' default is mawk: no regex intervals) over the layout the file has: jobs at
 # two spaces under `jobs:` (including quoted IDs), steps at six spaces, and literal
-# run blocks. Comments are not read. General YAML and shell execution are out of scope.
+# run blocks. Any step-level working-directory rejects preparation, even `.`; nested
+# environment values do not. Workflow/job defaults.run.working-directory is unsupported.
+# Comments are not read. General YAML and shell execution are out of scope.
 
 # The awk programs are single-quoted on purpose: awk reads them, not the shell.
 # shellcheck disable=SC2016
@@ -39,11 +41,11 @@ wiring() {
     function step_end() {
       if (checkout && first == 0) commit = 0
       if (action && first == 0) first = step_line
-      if (prepare && !conditional && !action) {
+      if (prepare && !conditional && !directory && !action) {
         if (first == 0) commit = prepare
         else if (late == 0) late = prepare
       }
-      checkout = action = prepare = conditional = run_block = 0
+      checkout = action = prepare = conditional = directory = run_block = 0
     }
     function finish() {
       step_end()
@@ -73,8 +75,9 @@ wiring() {
       sub(/^      -[[:space:]]+/, "        ", line)
     }
     # Only step-level fields are evidence, not values under env/with. Process the
-    # whole step before accepting preparation: if may follow run.
+    # whole step before accepting preparation: if/working-directory may follow run.
     line ~ /^        if:/ { conditional = 1 }
+    line ~ /^        working-directory:/ { directory = 1 }
     line ~ ("^        [{]?[[:space:]]*uses:[[:space:]]*[\"" q "]?actions/checkout@") { checkout = 1 }
     line ~ ("^        [{]?[[:space:]]*uses:[[:space:]]*[\"" q "]?\\./[\"" q "]?([[:space:]}]|$)") { action = 1 }
     line ~ /^        [^ ]/ {
@@ -98,6 +101,7 @@ wiring() {
 #   inline    the commit call is moved into an inline comment
 #   late      the commit call becomes `true`, and a step with it ends the job
 #   conditional / before-checkout / checkout: disable or invalidate preparation
+#   directory-before / directory-after: preparation changes working directory
 mutate() {
   JOB="$1" MODE="$2" awk '
     function flush(   i, m, prep) {
@@ -108,6 +112,10 @@ mutate() {
       if (prep && m == "conditional") {
         sub(/^      - /, "      - if: false\n        ", block)
       }
+      if (prep && m == "directory-before") {
+        sub(/^      - /, "      - working-directory: elsewhere\n        ", block)
+      }
+      if (prep && m == "directory-after") block = block "        working-directory: elsewhere\n"
       n = split(block, lines, "\n")
       for (i = 1; i < n; i++) {
         if (prep && lines[i] ~ /bash tests\/prepare-shard-crate\.sh --commit/) {
@@ -151,7 +159,7 @@ ok pull-request" "$out"
 # --- one job at a time -----------------------------------------------------------------
 
 for job in publish pull-request; do
-  for mode in drop copyonly comment inline late conditional before-checkout checkout; do
+  for mode in drop copyonly comment inline late conditional before-checkout checkout directory-before directory-after; do
     c="$WORK/$job-$mode.yml"
     mutate "$job" "$mode" "$REAL" "$c"
     if cmp -s "$REAL" "$c"; then
@@ -264,6 +272,46 @@ for condition in 'if: false' 'if: ${{ always() }}'; do
 "
   expect_fail "preparation with trailing $condition" "$WORK/new.yml" extra "without committing the crate first"
 done
+
+# Explicit root directories are conservatively rejected too. Nested environment
+# values in either field order must not invalidate real preparation.
+for directory in elsewhere .; do
+  new "      - uses: actions/checkout@v7
+      - run: bash tests/prepare-shard-crate.sh --commit
+        working-directory: $directory
+      - uses: ./
+"
+  expect_fail "explicit preparation directory $directory" "$WORK/new.yml" extra "without committing the crate first"
+done
+
+for order in before after; do
+  if [[ "$order" == before ]]; then
+    preparation='      - env:
+          working-directory: elsewhere
+        run: bash tests/prepare-shard-crate.sh --commit'
+  else
+    preparation='      - run: bash tests/prepare-shard-crate.sh --commit
+        env:
+          working-directory: elsewhere'
+  fi
+  new "      - uses: actions/checkout@v7
+$preparation
+      - uses: ./
+"
+  eq "env.working-directory $order run: all jobs pass and are checked" "ok publish
+ok pull-request
+ok extra" "$(wiring "$WORK/new.yml")"
+done
+
+new '      - uses: actions/checkout@v7
+      - run: true
+        working-directory: elsewhere
+      - run: bash tests/prepare-shard-crate.sh --commit
+      - uses: ./
+'
+eq "working-directory on an earlier step does not leak into preparation" "ok publish
+ok pull-request
+ok extra" "$(wiring "$WORK/new.yml")"
 
 new '      - uses: actions/checkout@v7
       - run: bash tests/prepare-shard-crate.sh --commit
