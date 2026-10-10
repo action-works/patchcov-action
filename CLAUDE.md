@@ -46,8 +46,10 @@ cargo-llvm-cov. The repository is `action-works/patchcov-action`; it was copied 
   is no substitute. Preparation must be in an unconditional step after the latest checkout.
   Quoted job IDs are read; any step `if:` or `working-directory` invalidates preparation,
   even an explicit root directory (`.`). Nested environment values do not count as step
-  fields. Workflow/job `defaults.run.working-directory` is unsupported; the reader does
-  not resolve directories. See the E2E sharded notes below for the other reader limits.
+  fields. Any workflow/job `defaults.run.working-directory` also invalidates preparation,
+  including `.` and defaults after steps/jobs. Only block defaults/run mappings at the
+  documented indentation are read; the reader does not resolve directories or overrides.
+  See the E2E sharded notes below for the other reader limits.
 - `.github/workflows/integration.yml`: pinned/latest x64/ARM64 thin-mode, fat-mode,
   filename filters, version spelling, redirect fallback, 0.1.0 missing-asset control,
   Ubuntu 22.04/24.04 compatibility and deprecated-flag control. No old flag-floor jobs.
@@ -1540,10 +1542,14 @@ this repository's tracker.
     The awk reader checks whole steps in the current layout: jobs at two spaces, steps at six,
     and literal run blocks. It skips comments and nested mapping values; any preparation-step
     `if:` or `working-directory` is conservatively rejected, even an explicit root directory
-    (`.`). Nested `env.working-directory` values are not step fields. Workflow/job
-    `defaults.run.working-directory` is unsupported: this guard does not resolve command
-    directories. Anchors, reusable workflows, alternative indentation, folded run blocks,
-    shell execution and GitHub expression evaluation are out of scope.
+    (`.`). Nested `env.working-directory` values are not step fields. Any workflow/job
+    `defaults.run.working-directory` also invalidates preparation, even `.` or with a step
+    override; reporting waits for the whole workflow so defaults after steps/jobs count.
+    Block defaults/run mappings use two/four spaces at workflow level and six/eight at job
+    level; shell defaults and nested environment values remain valid. This guard does not
+    resolve command directories or overrides. Flow defaults, anchors, reusable workflows,
+    alternative indentation, folded run blocks, shell execution and GitHub expression
+    evaluation are out of scope.
     No checkout is required for synthetic minimal cases, but each checkout before the first action clears
     earlier preparation. A new job needs no allowlist entry.
   - `prepare-shard-crate.sh --commit` fails if a file it copied was not committed
