@@ -37,7 +37,7 @@ work_dir
 wiring() {
   awk -v q="'" '
     function step_end() {
-      if (checkout) commit = 0
+      if (checkout && first == 0) commit = 0
       if (action && first == 0) first = step_line
       if (prepare && !conditional && !action) {
         if (first == 0) commit = prepare
@@ -248,6 +248,13 @@ new "      - name: Commit
 "
 out="$(wiring "$WORK/new.yml")"
 has "control: a commit inside a run block counts" "$out" "ok extra"
+
+new '      - uses: actions/checkout@v7
+      - run: bash tests/prepare-shard-crate.sh --commit
+      - uses: ./
+      - uses: actions/checkout@v7
+'
+has "control: checkout after the first action does not change its preparation" "$(wiring "$WORK/new.yml")" "ok extra"
 
 # Conditions after run must also invalidate the whole preparation step.
 for condition in 'if: false' 'if: ${{ always() }}'; do

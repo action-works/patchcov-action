@@ -1528,8 +1528,8 @@ this repository's tracker.
   - **Every job that runs the action commits the crate first (#13).**
     `tests/e2e-sharded-wiring.test.sh` reads `e2e-sharded.yml` and fails, naming the job, when a
     job with a `uses: ./` step has no `prepare-shard-crate.sh --commit` step ahead of the first
-    in an unconditional step after the latest `actions/checkout` (#17). `allow-path-mismatch` is NOT an alternative, whatever #13 first
-    proposed: it silences the path check but leaves the patch empty, so the patch gate would pass
+    in an unconditional step after the latest preceding `actions/checkout` (#17).
+    `allow-path-mismatch` is NOT an alternative, whatever #13 first proposed: it silences the path check but leaves the patch empty, so the patch gate would pass
     vacuously. `pull-request` sets it for the baseline side and commits too, so the rule has no
     exemptions. Checked against mutations of a copy (drop, copy-only, commented out, inline
     comment, moved after the action, disabled by `if:`, before checkout, or followed by another
@@ -1538,8 +1538,8 @@ this repository's tracker.
     and literal run blocks. It skips comments and nested mapping values; any preparation-step
     `if:` is conservatively rejected. Anchors, reusable workflows, alternative indentation,
     folded run blocks, shell execution and GitHub expression evaluation are out of scope.
-    No checkout is required for synthetic minimal cases, but each checkout clears earlier
-    preparation. A new job needs no allowlist entry.
+    No checkout is required for synthetic minimal cases, but each checkout before the first action clears
+    earlier preparation. A new job needs no allowlist entry.
   - `prepare-shard-crate.sh --commit` fails if a file it copied was not committed
     (`git add` skips an ignored file silently), so a `.gitignore` rule cannot shorten the
     patch unnoticed.
