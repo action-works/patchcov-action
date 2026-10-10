@@ -43,8 +43,9 @@ cargo-llvm-cov. The repository is `action-works/patchcov-action`; it was copied 
 - `tests/check-deprecated-flags.sh`: no deprecated patchcov `--format` in shipped code.
 - `tests/e2e-sharded-wiring.test.sh`: every `e2e-sharded.yml` job that runs the action
   (`uses: ./`) must run `prepare-shard-crate.sh --commit` ahead of it; `allow-path-mismatch`
-  is no substitute. Text reader: it does not see a commit disabled by a step `if:`, a quoted
-  job id, or a commit placed before `actions/checkout`. See the E2E sharded notes below.
+  is no substitute. Preparation must be in an unconditional step after the latest checkout.
+  Quoted job IDs are read; any step `if:` invalidates preparation. See the E2E sharded
+  notes below for the text reader limits.
 - `.github/workflows/integration.yml`: pinned/latest x64/ARM64 thin-mode, fat-mode,
   filename filters, version spelling, redirect fallback, 0.1.0 missing-asset control,
   Ubuntu 22.04/24.04 compatibility and deprecated-flag control. No old flag-floor jobs.
@@ -1527,13 +1528,18 @@ this repository's tracker.
   - **Every job that runs the action commits the crate first (#13).**
     `tests/e2e-sharded-wiring.test.sh` reads `e2e-sharded.yml` and fails, naming the job, when a
     job with a `uses: ./` step has no `prepare-shard-crate.sh --commit` step ahead of the first
-    (never, or only after). `allow-path-mismatch` is NOT an alternative, whatever #13 first
-    proposed: it silences the path check but leaves the patch empty, so the patch gate would pass
+    in an unconditional step after the latest preceding `actions/checkout` (#17).
+    `allow-path-mismatch` is NOT an alternative, whatever #13 first proposed: it silences the path check but leaves the patch empty, so the patch gate would pass
     vacuously. `pull-request` sets it for the baseline side and commits too, so the rule has no
     exemptions. Checked against mutations of a copy (drop, copy-only, commented out, inline
-    comment, moved after the action, in `publish` and `pull-request`, and a new job). The reader
-    is awk over the file's layout (jobs at two spaces) and skips comments; a new job needs nothing
-    added anywhere.
+    comment, moved after the action, disabled by `if:`, before checkout, or followed by another
+    checkout, in both `publish` and `pull-request`, including quoted job IDs, and a new job).
+    The awk reader checks whole steps in the current layout: jobs at two spaces, steps at six,
+    and literal run blocks. It skips comments and nested mapping values; any preparation-step
+    `if:` is conservatively rejected. Anchors, reusable workflows, alternative indentation,
+    folded run blocks, shell execution and GitHub expression evaluation are out of scope.
+    No checkout is required for synthetic minimal cases, but each checkout before the first action clears
+    earlier preparation. A new job needs no allowlist entry.
   - `prepare-shard-crate.sh --commit` fails if a file it copied was not committed
     (`git add` skips an ignored file silently), so a `.gitignore` rule cannot shorten the
     patch unnoticed.

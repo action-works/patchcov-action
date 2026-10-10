@@ -6,7 +6,8 @@
 # patchcov rejects a report whose paths match no tracked file (exit 7), and a patch gate
 # over a crate that is not in the diff passes vacuously. So every job that runs the action
 # (`uses: ./`) on the sharded crate must commit it locally first
-# (`tests/prepare-shard-crate.sh --commit`), in a step ahead of its first `uses: ./`. That was
+# (`tests/prepare-shard-crate.sh --commit`), in an unconditional step after the latest
+# checkout and ahead of its first `uses: ./`. That was
 # fixed one job at a time and missed once (#11), and nothing tied the two together.
 #
 # `allow-path-mismatch` is NOT an alternative to the commit: it silences the path check but
@@ -16,7 +17,8 @@
 # One reader function over a workflows directory, run on the real workflow and on copies
 # broken one way at a time, so each rule is shown to fail. The reader is POSIX awk (the
 # ubuntu runners' default is mawk: no regex intervals) over the layout the file has: jobs at
-# two spaces under `jobs:`. Comment lines are not read.
+# two spaces under `jobs:` (including quoted IDs), steps at six spaces, and literal
+# run blocks. Comments are not read. General YAML and shell execution are out of scope.
 
 # The awk programs are single-quoted on purpose: awk reads them, not the shell.
 # shellcheck disable=SC2016
@@ -34,33 +36,57 @@ work_dir
 # `FAIL <job>: <reason>`. A job with no `uses: ./` is not reported.
 wiring() {
   awk -v q="'" '
+    function step_end() {
+      if (checkout && first == 0) commit = 0
+      if (action && first == 0) first = step_line
+      if (prepare && !conditional && !action) {
+        if (first == 0) commit = prepare
+        else if (late == 0) late = prepare
+      }
+      checkout = action = prepare = conditional = run_block = 0
+    }
     function finish() {
+      step_end()
       if (job == "" || first == 0) return
       if (commit > 0) print "ok " job
       else if (late > 0) print "FAIL " job ": commits the crate (line " late ") only after the action (line " first ")"
-      else print "FAIL " job ": runs the action (line " first ") without committing the crate first"
+      else print "FAIL " job ": runs the action (line " first ") without committing the crate first after checkout"
     }
     /^[^ #]/ { if (injobs) { finish(); job = "" } injobs = ($0 ~ /^jobs:/) ; next }
     !injobs { next }
-    /^  [A-Za-z0-9_-]+:/ {
-      finish()
-      job = $1; sub(/:$/, "", job); first = 0; commit = 0; late = 0
-      next
-    }
     /^[[:space:]]*#/ { next }
-    job == "" { next }
     {
       line = $0
-      sub(/[[:space:]]#.*$/, "", line)   # an inline comment is not read either
+      sub(/[[:space:]]#.*$/, "", line)
     }
-    # The call must start the command (`run: bash tests/...` or a line of a `run: |` body), so an
-    # echo or a string that merely holds the text is not a commit.
-    line ~ /^[[:space:]]*(-[[:space:]]+)?(run:[[:space:]]*(\|[-+]?)?[[:space:]]*)?(bash|sh)[[:space:]]+(\.\/)?tests\/prepare-shard-crate\.sh[[:space:]]+--commit([[:space:]]|$)/ {
-      if (first == 0) { if (commit == 0) commit = NR } else if (late == 0) late = NR
+    line ~ ("^  ([A-Za-z0-9_-]+|\"[A-Za-z0-9_-]+\"|" q "[A-Za-z0-9_-]+" q "):[[:space:]]*$") {
+      finish()
+      job = line; sub(/^  /, "", job); sub(/:[[:space:]]*$/, "", job)
+      gsub("[\"" q "]", "", job)
+      first = commit = late = 0
+      next
     }
-    # The quote is passed in: a hex escape in a regex is not portable to mawk. A flow-style
-    # step (`- {uses: ./}`) is read too.
-    line ~ ("^[[:space:]]*(-[[:space:]]+)?[{]?[[:space:]]*uses:[[:space:]]*[\"" q "]?\\./[\"" q "]?([[:space:]}]|$)") { if (first == 0) first = NR }
+    job == "" { next }
+    line ~ /^      -[[:space:]]/ {
+      step_end()
+      step_line = NR
+      sub(/^      -[[:space:]]+/, "        ", line)
+    }
+    # Only step-level fields are evidence, not values under env/with. Process the
+    # whole step before accepting preparation: if may follow run.
+    line ~ /^        if:/ { conditional = 1 }
+    line ~ ("^        [{]?[[:space:]]*uses:[[:space:]]*[\"" q "]?actions/checkout@") { checkout = 1 }
+    line ~ ("^        [{]?[[:space:]]*uses:[[:space:]]*[\"" q "]?\\./[\"" q "]?([[:space:]}]|$)") { action = 1 }
+    line ~ /^        [^ ]/ {
+      run_block = (line ~ /^        run:[[:space:]]*\|[-+]?[[:space:]]*$/)
+      command = line
+      sub(/^        run:[[:space:]]*/, "", command)
+      if (line !~ /^        run:/) next
+    }
+    line ~ /^          [^ ]/ && run_block { command = line; sub(/^          /, "", command) }
+    # Standalone command starts only; comments, echo and nested mapping values do
+    # not prove preparation. Shell control flow is outside this reader contract.
+    (line ~ /^        run:/ || (run_block && line ~ /^          [^ ]/)) && command ~ /^(bash|sh)[[:space:]]+(\.\/)?tests\/prepare-shard-crate\.sh[[:space:]]+--commit([[:space:]]|$)/ { prepare = NR }
     END { if (injobs) finish() }
   ' "$1"
 }
@@ -71,20 +97,36 @@ wiring() {
 #   comment   the line holding the commit call is commented out
 #   inline    the commit call is moved into an inline comment
 #   late      the commit call becomes `true`, and a step with it ends the job
+#   conditional / before-checkout / checkout: disable or invalidate preparation
 mutate() {
   JOB="$1" MODE="$2" awk '
-    function tail() { if (inj && ENVIRON["MODE"] == "late") print "      - run: bash tests/prepare-shard-crate.sh --commit" }
-    /^[^ #]/ { if (injobs) tail(); injobs = ($0 ~ /^jobs:/); inj = 0 }
-    injobs && /^  [A-Za-z0-9_-]+:/ { tail(); inj = ($1 == ENVIRON["JOB"] ":") }
-    inj && $0 !~ /^[[:space:]]*#/ && /bash tests\/prepare-shard-crate\.sh --commit/ {
+    function flush(   i, m, prep) {
       m = ENVIRON["MODE"]
-      if (m == "drop" || m == "late") sub(/bash tests\/prepare-shard-crate\.sh --commit/, "true")
-      else if (m == "copyonly") sub(/ --commit/, "")
-      else if (m == "comment") $0 = "        # " $0
-      else if (m == "inline") sub(/bash tests\/prepare-shard-crate\.sh --commit/, "true # &")
+      prep = (inj && block ~ /bash tests\/prepare-shard-crate\.sh --commit/)
+      if (inj && m == "before-checkout" && block ~ /uses: actions\/checkout@/)
+        print "      - run: bash tests/prepare-shard-crate.sh --commit"
+      if (prep && m == "conditional") {
+        sub(/^      - /, "      - if: false\n        ", block)
+      }
+      n = split(block, lines, "\n")
+      for (i = 1; i < n; i++) {
+        if (prep && lines[i] ~ /bash tests\/prepare-shard-crate\.sh --commit/) {
+          if (m == "drop" || m == "late" || m == "before-checkout") sub(/bash tests\/prepare-shard-crate\.sh --commit/, "true", lines[i])
+          else if (m == "copyonly") sub(/ --commit/, "", lines[i])
+          else if (m == "comment") lines[i] = "        # " lines[i]
+          else if (m == "inline") sub(/bash tests\/prepare-shard-crate\.sh --commit/, "true # &", lines[i])
+        }
+        print lines[i]
+      }
+      if (prep && m == "checkout") print "      - uses: actions/checkout@v7"
+      block = ""
     }
-    { print }
-    END { tail() }
+    function tail() { if (inj && ENVIRON["MODE"] == "late") print "      - run: bash tests/prepare-shard-crate.sh --commit" }
+    /^[^ #]/ { flush(); if (injobs) tail(); injobs = ($0 ~ /^jobs:/); inj = 0 }
+    injobs && /^  [A-Za-z0-9_-]+:/ { flush(); tail(); inj = ($1 == ENVIRON["JOB"] ":") }
+    /^      - / { flush() }
+    { block = block $0 "\n" }
+    END { flush(); tail() }
   ' "$3" >"$4"
 }
 
@@ -109,7 +151,7 @@ ok pull-request" "$out"
 # --- one job at a time -----------------------------------------------------------------
 
 for job in publish pull-request; do
-  for mode in drop copyonly comment inline late; do
+  for mode in drop copyonly comment inline late conditional before-checkout checkout; do
     c="$WORK/$job-$mode.yml"
     mutate "$job" "$mode" "$REAL" "$c"
     if cmp -s "$REAL" "$c"; then
@@ -121,6 +163,26 @@ for job in publish pull-request; do
       *) frag="without committing the crate first" ;;
     esac
     expect_fail "$mode in $job" "$c" "$job" "$frag"
+  done
+done
+
+# Quoted IDs still identify the same jobs, both intact and without preparation.
+for job in publish pull-request; do
+  for quote in "'" '"'; do
+    c="$WORK/$job-quoted.yml"
+    JOB="$job" QUOTE="$quote" awk '
+      $0 == "  " ENVIRON["JOB"] ":" { $0 = "  " ENVIRON["QUOTE"] ENVIRON["JOB"] ENVIRON["QUOTE"] ":" }
+      { print }
+    ' "$REAL" >"$c"
+    if cmp -s "$REAL" "$c"; then bad "quoted $job: mutation changed the copy"; continue; fi
+    eq "quoted $job: intact jobs pass and are checked" "ok publish
+ok pull-request" "$(wiring "$c")"
+    mutate "$job" drop "$REAL" "$WORK/dropped.yml"
+    JOB="$job" QUOTE="$quote" awk '
+      $0 == "  " ENVIRON["JOB"] ":" { $0 = "  " ENVIRON["QUOTE"] ENVIRON["JOB"] ENVIRON["QUOTE"] ":" }
+      { print }
+    ' "$WORK/dropped.yml" >"$c"
+    expect_fail "quoted $job without preparation" "$c" "$job" "without committing the crate first"
   done
 done
 
@@ -186,6 +248,45 @@ new "      - name: Commit
 "
 out="$(wiring "$WORK/new.yml")"
 has "control: a commit inside a run block counts" "$out" "ok extra"
+
+new '      - uses: actions/checkout@v7
+      - run: bash tests/prepare-shard-crate.sh --commit
+      - uses: ./
+      - uses: actions/checkout@v7
+'
+has "control: checkout after the first action does not change its preparation" "$(wiring "$WORK/new.yml")" "ok extra"
+
+# Conditions after run must also invalidate the whole preparation step.
+for condition in 'if: false' 'if: ${{ always() }}'; do
+  new "      - run: bash tests/prepare-shard-crate.sh --commit
+        $condition
+      - uses: ./
+"
+  expect_fail "preparation with trailing $condition" "$WORK/new.yml" extra "without committing the crate first"
+done
+
+new '      - uses: actions/checkout@v7
+      - run: bash tests/prepare-shard-crate.sh --commit
+      - uses: actions/checkout@v7
+      - run: bash tests/prepare-shard-crate.sh --commit
+      - uses: ./
+'
+has "control: preparation after the latest checkout passes" "$(wiring "$WORK/new.yml")" "ok extra"
+
+new '      - name: Environment is not execution
+        env:
+          run: bash tests/prepare-shard-crate.sh --commit
+      - uses: ./
+'
+expect_fail "env.run is not preparation" "$WORK/new.yml" extra "without committing the crate first"
+
+new '      - run: true
+        env:
+          COMMAND: |
+            bash tests/prepare-shard-crate.sh --commit
+      - uses: ./
+'
+expect_fail "an environment block is not preparation" "$WORK/new.yml" extra "without committing the crate first"
 
 # --- allow-path-mismatch is not a way out ----------------------------------------------
 
