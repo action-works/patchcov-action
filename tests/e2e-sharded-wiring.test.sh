@@ -19,7 +19,9 @@
 # ubuntu runners' default is mawk: no regex intervals) over the layout the file has: jobs at
 # two spaces under `jobs:` (including quoted IDs), steps at six spaces, and literal
 # run blocks. Any step-level working-directory rejects preparation, even `.`; nested
-# environment values do not. Workflow/job defaults.run.working-directory is unsupported.
+# environment values do not. Any workflow/job defaults.run.working-directory also rejects
+# preparation, even `.` or with a step override. Only block defaults/run mappings at
+# two/four spaces (workflow) or six/eight spaces (job) are read, in either field order.
 # Comments are not read. General YAML and shell execution are out of scope.
 
 # The awk programs are single-quoted on purpose: awk reads them, not the shell.
@@ -50,22 +52,35 @@ wiring() {
     function finish() {
       step_end()
       if (job == "" || first == 0) return
-      if (commit > 0) print "ok " job
-      else if (late > 0) print "FAIL " job ": commits the crate (line " late ") only after the action (line " first ")"
-      else print "FAIL " job ": runs the action (line " first ") without committing the crate first after checkout"
+      names[++count] = job
+      if (job_directory) results[count] = "FAIL " job ": inherited job defaults.run.working-directory invalidates preparation"
+      else if (commit > 0) results[count] = "ok " job
+      else if (late > 0) results[count] = "FAIL " job ": commits the crate (line " late ") only after the action (line " first ")"
+      else results[count] = "FAIL " job ": runs the action (line " first ") without committing the crate first after checkout"
     }
-    /^[^ #]/ { if (injobs) { finish(); job = "" } injobs = ($0 ~ /^jobs:/) ; next }
-    !injobs { next }
-    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
     {
       line = $0
       sub(/[[:space:]]#.*$/, "", line)
+      # Scope defaults/run by mapping depth; env/with values are not defaults.
+      if (line ~ /^[^ ]/) workflow_defaults = workflow_run = 0
+      if (line ~ /^  [^ ]/) workflow_run = 0
+      if (line ~ /^defaults:[[:space:]]*$/) workflow_defaults = 1
+      if (workflow_defaults && line ~ /^  run:[[:space:]]*$/) workflow_run = 1
+      if (workflow_run && line ~ /^    working-directory:/) workflow_directory = 1
+      if (line ~ /^    [^ ]/) job_defaults = job_run = 0
+      if (line ~ /^      [^ ]/) job_run = 0
+      if (injobs && job != "" && line ~ /^    defaults:[[:space:]]*$/) job_defaults = 1
+      if (job_defaults && line ~ /^      run:[[:space:]]*$/) job_run = 1
+      if (job_run && line ~ /^        working-directory:/) job_directory = 1
     }
+    /^[^ #]/ { if (injobs) { finish(); job = "" } injobs = ($0 ~ /^jobs:/) ; next }
+    !injobs { next }
     line ~ ("^  ([A-Za-z0-9_-]+|\"[A-Za-z0-9_-]+\"|" q "[A-Za-z0-9_-]+" q "):[[:space:]]*$") {
       finish()
       job = line; sub(/^  /, "", job); sub(/:[[:space:]]*$/, "", job)
       gsub("[\"" q "]", "", job)
-      first = commit = late = 0
+      first = commit = late = job_directory = job_defaults = job_run = 0
       next
     }
     job == "" { next }
@@ -90,7 +105,14 @@ wiring() {
     # Standalone command starts only; comments, echo and nested mapping values do
     # not prove preparation. Shell control flow is outside this reader contract.
     (line ~ /^        run:/ || (run_block && line ~ /^          [^ ]/)) && command ~ /^(bash|sh)[[:space:]]+(\.\/)?tests\/prepare-shard-crate\.sh[[:space:]]+--commit([[:space:]]|$)/ { prepare = NR }
-    END { if (injobs) finish() }
+    END {
+      if (injobs) finish()
+      # Workflow defaults may follow jobs; report only after reading the whole file.
+      for (i = 1; i <= count; i++) {
+        if (workflow_directory) print "FAIL " names[i] ": inherited workflow defaults.run.working-directory invalidates preparation"
+        else print results[i]
+      }
+    }
   ' "$1"
 }
 
@@ -193,6 +215,79 @@ ok pull-request" "$(wiring "$c")"
     expect_fail "quoted $job without preparation" "$c" "$job" "without committing the crate first"
   done
 done
+
+# Inherited defaults apply regardless of field order. Every explicit directory,
+# including root, is rejected without attempting override/path resolution.
+for directory in elsewhere .; do
+  for order in before after; do
+    c="$WORK/workflow-default-$order.yml"
+    DIRECTORY="$directory" ORDER="$order" awk '
+      function defaults() {
+        print "defaults:\n  run:\n    working-directory: " ENVIRON["DIRECTORY"]
+      }
+      /^jobs:/ && ENVIRON["ORDER"] == "before" { defaults() }
+      { print }
+      END { if (ENVIRON["ORDER"] == "after") defaults() }
+    ' "$REAL" >"$c"
+    out="$(wiring "$c")"
+    for job in publish pull-request; do
+      has "workflow directory $directory $order jobs: $job fails" "$out" "FAIL $job: inherited workflow defaults.run.working-directory"
+    done
+    eq "workflow directory $directory $order jobs: exactly two failures" 2 "$(grep -c '^FAIL' <<<"$out")"
+    for job in publish pull-request; do
+      c="$WORK/$job-default-$order.yml"
+      JOB="$job" DIRECTORY="$directory" ORDER="$order" awk '
+        function defaults() {
+          print "    defaults:\n      run:\n        working-directory: " ENVIRON["DIRECTORY"]
+        }
+        /^  [A-Za-z0-9_-]+:/ {
+          if (inj && ENVIRON["ORDER"] == "after") defaults()
+          inj = ($1 == ENVIRON["JOB"] ":")
+        }
+        inj && /^    steps:/ && ENVIRON["ORDER"] == "before" { defaults() }
+        { print }
+        END { if (inj && ENVIRON["ORDER"] == "after") defaults() }
+      ' "$REAL" >"$c"
+      expect_fail "job directory $directory $order steps in $job" "$c" "$job" "inherited job defaults.run.working-directory"
+    done
+  done
+done
+
+# Shell defaults, nested env values and sibling mappings must not look like a
+# defaults.run directory. Job scopes must not leak from the action-free shard.
+for order in before after; do
+  c="$WORK/default-controls-$order.yml"
+  ORDER="$order" awk '
+    function workflow_defaults() {
+      print "defaults:\n  run:\n    shell: bash\nenv:\n  working-directory: elsewhere"
+    }
+    function job_defaults() {
+      print "    defaults:\n      run:\n        shell: bash\n    env:\n      working-directory: elsewhere"
+    }
+    /^jobs:/ && ENVIRON["ORDER"] == "before" { workflow_defaults() }
+    /^  [A-Za-z0-9_-]+:/ {
+      if (inj && ENVIRON["ORDER"] == "after") job_defaults()
+      inj = ($1 == "publish:" || $1 == "pull-request:")
+    }
+    inj && /^    steps:/ && ENVIRON["ORDER"] == "before" { job_defaults() }
+    { print }
+    END {
+      if (inj && ENVIRON["ORDER"] == "after") job_defaults()
+      if (ENVIRON["ORDER"] == "after") workflow_defaults()
+    }
+  ' "$REAL" >"$c"
+  eq "shell defaults and nested env $order: real jobs still pass" "ok publish
+ok pull-request" "$(wiring "$c")"
+done
+
+c="$WORK/shard-default.yml"
+awk '
+  /^  shard:/ { print; print "    defaults:\n      run:\n        working-directory: elsewhere"; next }
+  { print }
+' "$REAL" >"$c"
+if cmp -s "$REAL" "$c"; then bad "shard default: mutation changed the copy"; fi
+eq "job directory in shard does not leak to action jobs" "ok publish
+ok pull-request" "$(wiring "$c")"
 
 # --- a new job -------------------------------------------------------------------------
 
@@ -335,6 +430,17 @@ new '      - run: true
       - uses: ./
 '
 expect_fail "an environment block is not preparation" "$WORK/new.yml" extra "without committing the crate first"
+
+new '      - uses: actions/checkout@v7
+      - run: bash tests/prepare-shard-crate.sh --commit
+      - uses: ./
+    env:
+      run:
+        working-directory: elsewhere
+'
+eq "nested job env.run directory is not a default" "ok publish
+ok pull-request
+ok extra" "$(wiring "$WORK/new.yml")"
 
 # --- allow-path-mismatch is not a way out ----------------------------------------------
 
