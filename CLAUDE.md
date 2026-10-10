@@ -44,8 +44,10 @@ cargo-llvm-cov. The repository is `action-works/patchcov-action`; it was copied 
 - `tests/e2e-sharded-wiring.test.sh`: every `e2e-sharded.yml` job that runs the action
   (`uses: ./`) must run `prepare-shard-crate.sh --commit` ahead of it; `allow-path-mismatch`
   is no substitute. Preparation must be in an unconditional step after the latest checkout.
-  Quoted job IDs are read; any step `if:` invalidates preparation. See the E2E sharded
-  notes below for the text reader limits.
+  Quoted job IDs are read; any step `if:` or `working-directory` invalidates preparation,
+  even an explicit root directory (`.`). Nested environment values do not count as step
+  fields. Workflow/job `defaults.run.working-directory` is unsupported; the reader does
+  not resolve directories. See the E2E sharded notes below for the other reader limits.
 - `.github/workflows/integration.yml`: pinned/latest x64/ARM64 thin-mode, fat-mode,
   filename filters, version spelling, redirect fallback, 0.1.0 missing-asset control,
   Ubuntu 22.04/24.04 compatibility and deprecated-flag control. No old flag-floor jobs.
@@ -1533,11 +1535,15 @@ this repository's tracker.
     vacuously. `pull-request` sets it for the baseline side and commits too, so the rule has no
     exemptions. Checked against mutations of a copy (drop, copy-only, commented out, inline
     comment, moved after the action, disabled by `if:`, before checkout, or followed by another
-    checkout, in both `publish` and `pull-request`, including quoted job IDs, and a new job).
+    checkout, or given a step-level `working-directory` before/after run, in both `publish`
+    and `pull-request`, including quoted job IDs, and a new job).
     The awk reader checks whole steps in the current layout: jobs at two spaces, steps at six,
     and literal run blocks. It skips comments and nested mapping values; any preparation-step
-    `if:` is conservatively rejected. Anchors, reusable workflows, alternative indentation,
-    folded run blocks, shell execution and GitHub expression evaluation are out of scope.
+    `if:` or `working-directory` is conservatively rejected, even an explicit root directory
+    (`.`). Nested `env.working-directory` values are not step fields. Workflow/job
+    `defaults.run.working-directory` is unsupported: this guard does not resolve command
+    directories. Anchors, reusable workflows, alternative indentation, folded run blocks,
+    shell execution and GitHub expression evaluation are out of scope.
     No checkout is required for synthetic minimal cases, but each checkout before the first action clears
     earlier preparation. A new job needs no allowlist entry.
   - `prepare-shard-crate.sh --commit` fails if a file it copied was not committed
